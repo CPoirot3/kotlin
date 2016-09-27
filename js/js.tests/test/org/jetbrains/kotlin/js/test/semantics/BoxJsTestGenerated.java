@@ -448,6 +448,12 @@ public class BoxJsTestGenerated extends AbstractBoxJsTest {
             KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("js/js.translator/testData/box/classObject"), Pattern.compile("^([^_](.+))\\.kt$"), true);
         }
 
+        @TestMetadata("classObjectInterface.kt")
+        public void testClassObjectInterface() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("js/js.translator/testData/box/classObject/classObjectInterface.kt");
+            doTest(fileName);
+        }
+
         @TestMetadata("defaultObjectSameNamesAsInOuter.kt")
         public void testDefaultObjectSameNamesAsInOuter() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("js/js.translator/testData/box/classObject/defaultObjectSameNamesAsInOuter.kt");
@@ -7305,7 +7311,6 @@ public class BoxJsTestGenerated extends AbstractBoxJsTest {
                 doTest(fileName);
             }
         }
-
     }
 
     @TestMetadata("js/js.translator/testData/box/safeCall")

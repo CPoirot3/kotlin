@@ -57,7 +57,6 @@ import java.io.Closeable
 import java.io.File
 import java.io.PrintStream
 import java.nio.charset.Charset
-import java.util.regex.Pattern
 
 abstract class BasicBoxTest(
         private val pathToTestDir: String,
@@ -65,23 +64,23 @@ abstract class BasicBoxTest(
 ) : KotlinTestWithEnvironment() {
     private val COMMON_FILES_NAME = "_common"
     private val COMMON_FILES_DIR = "_commonFiles/"
-    val MODULE_EMULATION_FILE = TEST_DATA_DIR_PATH + "/moduleEmulation.js"
-    val additionalCommonFileDirectories = mutableListOf<String>()
+    private val MODULE_EMULATION_FILE = TEST_DATA_DIR_PATH + "/moduleEmulation.js"
+    protected val additionalCommonFileDirectories = mutableListOf<String>()
 
-    val TEST_MODULE = "JS_TESTS"
-    val DEFAULT_MODULE = "main"
-    val TEST_FUNCTION = "box"
+    private val TEST_MODULE = "JS_TESTS"
+    private val DEFAULT_MODULE = "main"
+    private val TEST_FUNCTION = "box"
 
     fun doTest(filePath: String) {
         val file = File(filePath)
         val outputDir = getOutputDir(file)
-        val expectedText = KotlinTestUtils.doLoadFile(file)
+        val sourceCode = KotlinTestUtils.doLoadFile(file)
 
         TestFileFactoryImpl().use { testFactory ->
-            val inputFiles = KotlinTestUtils.createTestFiles(file.name, expectedText, testFactory)
+            val inputFiles = KotlinTestUtils.createTestFiles(file.name, sourceCode, testFactory)
             val modules = inputFiles
                     .map { it.module }.distinct()
-                    .map { it.name to it }.toMap()
+                    .associate { it.name to it }
 
             val orderedModules = DFS.topologicalOrder(modules.values) { module -> module.dependencies.mapNotNull { modules[it] } }
 
@@ -125,7 +124,7 @@ abstract class BasicBoxTest(
             val allJsFiles = additionalFiles + inputJsFiles + generatedJsFiles + globalCommonFiles + localCommonFiles +
                              additionalCommonFiles
 
-            if (!SKIP_NODE_JS.matcher(expectedText).find()) {
+            if (!SKIP_NODE_JS.containsMatchIn(sourceCode)) {
                 val nodeRunnerName = mainModule.outputFileName(outputDir) + ".node.js"
                 val nodeRunnerText = generateNodeRunner(allJsFiles, outputDir, mainModuleName, testFactory.testPackage)
                 FileUtil.writeToFile(File(nodeRunnerName), nodeRunnerText)
@@ -158,14 +157,7 @@ abstract class BasicBoxTest(
         return sb.toString()
     }
 
-    private fun getOutputDir(file: File): File {
-        val stopFile = File(pathToTestDir)
-        return generateSequence(file.parentFile) { it.parentFile }
-                .takeWhile { it != stopFile }
-                .map { it.name }
-                .toList().asReversed()
-                .fold(File(pathToOutputDir), ::File)
-    }
+    private fun getOutputDir(file: File) = File(pathToOutputDir, file.relativeTo(File(pathToTestDir)).path)
 
     private fun TestModule.outputFileSimpleName(): String {
         val outputFileSuffix = if (this.name == TEST_MODULE) "" else "-$name"
@@ -251,7 +243,6 @@ abstract class BasicBoxTest(
         configuration.put(JSConfigurationKeys.MODULE_KIND, module.moduleKind)
         configuration.put(JSConfigurationKeys.TARGET, EcmaVersion.v5)
 
-        //configuration.put(JSConfigurationKeys.SOURCE_MAP, shouldGenerateSourceMap())
         configuration.put(JSConfigurationKeys.META_INFO, multiModule)
 
         return LibrarySourcesConfig(project, configuration)
@@ -273,21 +264,21 @@ abstract class BasicBoxTest(
             }
 
             if (module != null) {
-                val moduleKindMatcher = MODULE_KIND_PATTERN.matcher(text)
-                if (moduleKindMatcher.find()) {
-                    module.moduleKind = ModuleKind.valueOf(moduleKindMatcher.group(1))
+                MODULE_KIND_PATTERN.matchEntire(text)?.let { matchResult ->
+                    module.moduleKind = ModuleKind.valueOf(matchResult.groupValues[1])
                 }
             }
 
-            if (NO_INLINE_PATTERN.matcher(text).find()) {
-                (module ?: defaultModule).inliningDisabled = true
+            val containingModule = module ?: defaultModule
+            if (NO_INLINE_PATTERN.containsMatchIn(text)) {
+                containingModule.inliningDisabled = true
             }
 
             val temporaryFile = File(tmpDir, fileName)
             KotlinTestUtils.mkdirs(temporaryFile.parentFile)
             temporaryFile.writeText(text, Charsets.UTF_8)
 
-            return TestFile(temporaryFile.absolutePath, module ?: defaultModule)
+            return TestFile(temporaryFile.absolutePath, containingModule)
         }
 
         override fun createModule(name: String, dependencies: List<String>): TestModule? {
@@ -322,8 +313,8 @@ abstract class BasicBoxTest(
     companion object {
         val TEST_DATA_DIR_PATH = "js/js.translator/testData/"
 
-        private val MODULE_KIND_PATTERN = Pattern.compile("^// *MODULE_KIND: *(.+)$", Pattern.MULTILINE)
-        private val NO_INLINE_PATTERN = Pattern.compile("^// *NO_INLINE *$", Pattern.MULTILINE)
-        private val SKIP_NODE_JS = Pattern.compile("^// *SKIP_NODE_JS *$", Pattern.MULTILINE)
+        private val MODULE_KIND_PATTERN = Regex("^//\\s*MODULE_KIND:\\s*(.+)$", RegexOption.MULTILINE)
+        private val NO_INLINE_PATTERN = Regex("^//\\s*NO_INLINE\\s*$", RegexOption.MULTILINE)
+        private val SKIP_NODE_JS = Regex("^//\\s*SKIP_NODE_JS\\s*$", RegexOption.MULTILINE)
     }
 }

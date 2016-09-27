@@ -197,10 +197,9 @@ public class DirectiveTestUtils {
         @Override
         public void visitNameRef(@NotNull JsNameRef nameRef) {
             super.visitNameRef(nameRef);
-            JsName name = nameRef.getName();
-            if (name == null) return;
+            String name = nameRef.getIdent();
 
-            if (name.getIdent().equals(nameToSearch)) {
+            if (name.equals(nameToSearch)) {
                 hasReferences = true;
                 if (!(nameRef.getQualifier() instanceof JsLiteral.JsThisRef)) {
                     allReferencesQualifiedByThis = false;

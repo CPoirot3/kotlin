@@ -1,5 +1,6 @@
-{ "dependencies" : {
-
-    "require-from-string" : "1.2.0"
+{
+  "dependencies" : {
+    "require-from-string" : "1.2.0",
+    "mocha" : "latest"
   }
 }
