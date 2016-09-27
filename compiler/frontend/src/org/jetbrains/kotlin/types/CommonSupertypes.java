@@ -220,7 +220,12 @@ public class CommonSupertypes {
         for (TypeParameterDescriptor parameterDescriptor : parameters) {
             Set<TypeProjection> typeProjections = new HashSet<TypeProjection>();
             for (KotlinType type : types) {
-                typeProjections.add(type.getArguments().get(parameterDescriptor.getIndex()));
+                int index = parameterDescriptor.getIndex();
+                List<TypeProjection> arguments = type.getArguments();
+                if (index >= arguments.size()) {
+                    return ErrorUtils.createErrorType("There is no argument with index " + index + "in type " + type);
+                }
+                typeProjections.add(arguments.get(index));
             }
             newProjections.add(computeSupertypeProjection(parameterDescriptor, typeProjections, recursionDepth, maxDepth));
         }
