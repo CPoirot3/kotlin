@@ -32,6 +32,8 @@ import org.jetbrains.kotlin.descriptors.PackageFragmentProvider
 import org.jetbrains.kotlin.descriptors.PackagePartProvider
 import org.jetbrains.kotlin.frontend.java.di.createContainerForTopDownAnalyzerForJvm
 import org.jetbrains.kotlin.incremental.components.LookupTracker
+import org.jetbrains.kotlin.load.java.lazy.ModuleClassResolverImpl
+import org.jetbrains.kotlin.load.java.structure.JavaClass
 import org.jetbrains.kotlin.load.kotlin.DeserializationComponentsForJava
 import org.jetbrains.kotlin.load.kotlin.incremental.IncrementalPackageFragmentProvider
 import org.jetbrains.kotlin.load.kotlin.incremental.IncrementalPackagePartProvider
@@ -64,6 +66,14 @@ object TopDownAnalyzerFacadeForJVM {
         val incrementalComponents = configuration.get(JVMConfigurationKeys.INCREMENTAL_COMPILATION_COMPONENTS)
         val targetIds = configuration.get(JVMConfigurationKeys.MODULES)?.map(::TargetId)
 
+        val resolverByClass = object : (JavaClass) -> JavaDescriptorResolver {
+            lateinit var resolver: JavaDescriptorResolver
+
+            override fun invoke(javaClass: JavaClass): JavaDescriptorResolver {
+                return resolver
+            }
+        }
+
         val container = createContainerForTopDownAnalyzerForJvm(
                 moduleContext,
                 trace,
@@ -71,8 +81,10 @@ object TopDownAnalyzerFacadeForJVM {
                 GlobalSearchScope.allScope(project),
                 incrementalComponents?.getLookupTracker() ?: LookupTracker.DO_NOTHING,
                 IncrementalPackagePartProvider.create(packagePartProvider, files, targetIds, incrementalComponents, storageManager),
-                configuration.get(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS, LanguageVersionSettingsImpl.DEFAULT)
+                configuration.get(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS, LanguageVersionSettingsImpl.DEFAULT),
+                ModuleClassResolverImpl(resolverByClass)
         )
+        resolverByClass.resolver = container.get<JavaDescriptorResolver>()
 
         val additionalProviders = ArrayList<PackageFragmentProvider>()
 
