@@ -135,29 +135,20 @@ abstract class BasicBoxTest(
     }
 
     private fun generateNodeRunner(files: Collection<String>, dir: File, moduleName: String, testPackage: String?): String {
-        val sb = StringBuilder("var text = \"\";\n")
-        sb.append("var fs = require('fs');\n")
+        val sb = StringBuilder()
+        sb.append("module.exports = function(runBoxTest) {\n")
 
-        sb.append("module.exports = function(kotlin, requireFromString) {\n")
-        sb.append("text += 'module.exports = function(kotlin) {\\n';\n")
+        val fileNameList = files.map { fileName ->
+            "__dirname + \"/" + FileUtil.getRelativePath(dir, File(fileName)) + "\""
+        }.joinToString(", ")
+        val fqn = testPackage?: ""
 
-        for (file in files) {
-            val fileName = FileUtil.getRelativePath(dir, File(file))!!
-            sb.append("text += fs.readFileSync(__dirname + \"/$fileName\") + \"\\n\";\n")
-        }
-        sb.append("text += 'return kotlin.modules.$moduleName;';\n")
-        sb.append("text += \"};\";\n")
-
-        val fqn = testPackage?.let { ".$it" } ?: ""
-
-        sb.append("var testModule = requireFromString(text)(kotlin);\n")
-        sb.append("return testModule$fqn.box();\n")
-        sb.append("};")
-
+        sb.append("    return runBoxTest([$fileNameList], \"$moduleName\", \"$fqn\");\n")
+        sb.append("};\n")
         return sb.toString()
     }
 
-    private fun getOutputDir(file: File) = File(pathToOutputDir, file.relativeTo(File(pathToTestDir)).path)
+    private fun getOutputDir(file: File) = File(pathToOutputDir, file.parentFile.relativeTo(File(pathToTestDir)).path)
 
     private fun TestModule.outputFileSimpleName(): String {
         val outputFileSuffix = if (this.name == TEST_MODULE) "" else "-$name"

@@ -26,7 +26,7 @@ function exposeModel(model, path) {
                 if (typeof item === "string") {
                     it("", function () {
                         var result = require(childPath);
-                        assert.equal("OK", result(kotlin, requireFromString));
+                        assert.equal("OK", result(runBoxTest));
                     });
                 }
                 else if (typeof item === "object") {
@@ -65,6 +65,30 @@ function generateModel(path) {
     } else {
         return void 0;
     }
+}
+
+function runBoxTest(fileNames, moduleName, packageName) {
+    var text = "";
+    var i;
+    text += "module.exports = function(kotlin) {\n";
+
+    for (i = 0; i < fileNames.length; ++i) {
+        text += fs.readFileSync(fileNames[i]) + "\n";
+    }
+
+    text += "return kotlin.modules." + moduleName + ";";
+    text += "};";
+
+    var testPackage = requireFromString(text)(kotlin);
+    if (packageName != "") {
+        var packageParts = packageName.split(".");
+        for (i = 0; i < packageParts.length; ++i) {
+            testPackage = testPackage[packageParts[i]];
+            console.log(packageParts[i]);
+        }
+    }
+
+    return testPackage.box();
 }
 
 function supplyAsserter(kotlin) {
