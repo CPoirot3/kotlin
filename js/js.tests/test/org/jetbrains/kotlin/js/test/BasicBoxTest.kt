@@ -243,9 +243,10 @@ abstract class BasicBoxTest(
         var testPackage: String? = null
         val tmpDir = KotlinTestUtils.tmpDir("js-tests")
         val defaultModule = TestModule(TEST_MODULE, emptyList())
+        val psiFactory = KtPsiFactory(project)
 
         override fun createFile(module: TestModule?, fileName: String, text: String, directives: Map<String, String>): TestFile? {
-            val ktFile = KtPsiFactory(project).createFile(text)
+            val ktFile = psiFactory.createFile(text)
             val boxFunction = ktFile.declarations.find { it is KtNamedFunction && it.name == TEST_FUNCTION  }
             if (boxFunction != null) {
                 testPackage = ktFile.packageFqName.asString()
