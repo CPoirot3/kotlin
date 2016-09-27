@@ -408,7 +408,10 @@ object KotlinToJVMBytecodeCompiler {
                             environment.getSourceFiles(),
                             CliLightClassGenerationSupport.NoScopeRecordCliBindingTrace(),
                             environment.configuration,
-                            JvmPackagePartProvider(environment)
+                            JvmPackagePartProvider(environment),
+                            environment.configuration.get(JVMConfigurationKeys.MODULES)?.mapNotNull { module ->
+                                environment.findLocalDirectory(module.getOutputDirectory())
+                            }.orEmpty()
                     )
 
             override fun reportEnvironmentErrors() {

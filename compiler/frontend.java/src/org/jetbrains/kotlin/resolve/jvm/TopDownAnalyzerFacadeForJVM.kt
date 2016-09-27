@@ -16,7 +16,12 @@
 
 package org.jetbrains.kotlin.resolve.jvm
 
+import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiCompiledElement
+import com.intellij.psi.search.DelegatingGlobalSearchScope
 import com.intellij.psi.search.GlobalSearchScope
 import org.jetbrains.kotlin.analyzer.AnalysisResult
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
@@ -27,13 +32,17 @@ import org.jetbrains.kotlin.container.get
 import org.jetbrains.kotlin.context.ContextForNewModule
 import org.jetbrains.kotlin.context.MutableModuleContext
 import org.jetbrains.kotlin.context.ProjectContext
+import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.PackageFragmentProvider
 import org.jetbrains.kotlin.descriptors.PackagePartProvider
 import org.jetbrains.kotlin.descriptors.impl.CompositePackageFragmentProvider
+import org.jetbrains.kotlin.descriptors.impl.ModuleDependenciesImpl
 import org.jetbrains.kotlin.frontend.java.di.createContainerForTopDownAnalyzerForJvm
+import org.jetbrains.kotlin.frontend.java.di.initJvmBuiltInsForTopDownAnalysis
 import org.jetbrains.kotlin.incremental.components.LookupTracker
-import org.jetbrains.kotlin.load.java.lazy.ModuleClassResolverImpl
+import org.jetbrains.kotlin.load.java.lazy.ModuleClassResolver
 import org.jetbrains.kotlin.load.java.structure.JavaClass
+import org.jetbrains.kotlin.load.java.structure.impl.JavaClassImpl
 import org.jetbrains.kotlin.load.kotlin.DeserializationComponentsForJava
 import org.jetbrains.kotlin.load.kotlin.incremental.IncrementalPackageFragmentProvider
 import org.jetbrains.kotlin.load.kotlin.incremental.IncrementalPackagePartProvider
@@ -53,40 +62,100 @@ import java.util.*
 
 object TopDownAnalyzerFacadeForJVM {
     @JvmStatic
+    @JvmOverloads
     fun analyzeFilesWithJavaIntegration(
             project: Project,
             files: Collection<KtFile>,
             trace: BindingTrace,
             configuration: CompilerConfiguration,
-            packagePartProvider: PackagePartProvider
+            packagePartProvider: PackagePartProvider,
+            extraSearchPaths: List<VirtualFile> = emptyList()
     ): AnalysisResult {
-        val moduleContext = TopDownAnalyzerFacadeForJVM.createContextWithSealedModule(project, configuration)
+        val moduleContext = createModuleContext(project, configuration)
+
         val storageManager = moduleContext.storageManager
         val module = moduleContext.module
 
         val incrementalComponents = configuration.get(JVMConfigurationKeys.INCREMENTAL_COMPILATION_COMPONENTS)
         val targetIds = configuration.get(JVMConfigurationKeys.MODULES)?.map(::TargetId)
 
-        val resolverByClass = object : (JavaClass) -> JavaDescriptorResolver {
-            lateinit var resolver: JavaDescriptorResolver
+        val separateModules = !configuration.getBoolean(JVMConfigurationKeys.USE_SINGLE_MODULE)
+        val moduleClassResolver = SourceOrBinaryModuleClassResolver(separateModules)
 
-            override fun invoke(javaClass: JavaClass): JavaDescriptorResolver {
-                return resolver
-            }
+        val sourceScope: GlobalSearchScope =
+                if (separateModules) {
+                    // In case of separate modules, the source module scope generally consists of the following scopes:
+                    // 1) scope which only contains passed Kotlin source files (.kt and .kts)
+                    // 2) scope which contains all Java source files (.java) in the project
+                    // 3) scope which contains Kotlin and Java binaries from output directories of the compiled modules (.class)
+                    // TODO: inspect CONTENT_ROOTS instead
+                    val scope = GlobalSearchScope.filesScope(project, files.map { it.virtualFile }).uniteWith(
+                            object : DelegatingGlobalSearchScope(GlobalSearchScope.allScope(project)) {
+                                override fun contains(file: VirtualFile) = JavaFileType.INSTANCE === file.fileType
+                                override fun toString() = "All Java sources in the project"
+                            }
+                    )
+                    if (extraSearchPaths.isEmpty()) scope
+                    else scope.uniteWith(
+                            object : DelegatingGlobalSearchScope(GlobalSearchScope.allScope(project)) {
+                                override fun contains(file: VirtualFile) =
+                                        super.contains(file) &&
+                                        extraSearchPaths.any { searchPath -> VfsUtilCore.isAncestor(searchPath, file, false) }
+
+                                override fun toString() = "All files under: $extraSearchPaths"
+                            }
+                    )
+                }
+                else GlobalSearchScope.allScope(project)
+        val languageVersionSettings =
+                configuration.get(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS, LanguageVersionSettingsImpl.DEFAULT)
+
+        val dependencyModule = if (separateModules) {
+            val dependenciesContext = ContextForNewModule(
+                    moduleContext, Name.special("<dependencies of ${configuration.getNotNull(CommonConfigurationKeys.MODULE_NAME)}>"),
+                    JvmPlatform, module.builtIns /* TODO: test function from dependency returning a built-in type (check it's Serializable) */
+            )
+
+            val dependenciesContainer = createContainerForTopDownAnalyzerForJvm(
+                    dependenciesContext,
+                    trace,
+                    FileBasedDeclarationProviderFactory(storageManager, emptyList<KtFile>()),
+                    GlobalSearchScope.notScope(sourceScope), // TODO: ?!
+                    LookupTracker.DO_NOTHING,
+                    packagePartProvider,
+                    languageVersionSettings,
+                    moduleClassResolver
+            )
+
+            moduleClassResolver.compiledCodeResolver = dependenciesContainer.get<JavaDescriptorResolver>()
+
+            dependenciesContext.setDependencies(dependenciesContext.module, dependenciesContext.module.builtIns.builtInsModule)
+            dependenciesContext.initializeModuleContents(moduleClassResolver.compiledCodeResolver.packageFragmentProvider)
+            dependenciesContext.module
         }
+        else null
 
+        // Note that it's necessary to create container for sources _after_ creation of container for dependencies because
+        // CliLightClassGenerationSupport#initialize is invoked when container is created, si only the last module descriptor is going
+        // to be stored in CliLightClassGenerationSupport, and it better be the source one (otherwise light classes would not be found)
+        // TODO: get rid of duplicate invocation of CodeAnalyzerInitializer#initialize, or refactor CliLightClassGenerationSupport
         val container = createContainerForTopDownAnalyzerForJvm(
                 moduleContext,
                 trace,
                 FileBasedDeclarationProviderFactory(storageManager, files),
-                GlobalSearchScope.allScope(project),
+                sourceScope,
                 incrementalComponents?.getLookupTracker() ?: LookupTracker.DO_NOTHING,
-                IncrementalPackagePartProvider.create(packagePartProvider, files, targetIds, incrementalComponents, storageManager),
-                configuration.get(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS, LanguageVersionSettingsImpl.DEFAULT),
-                ModuleClassResolverImpl(resolverByClass)
-        )
-        resolverByClass.resolver = container.get<JavaDescriptorResolver>()
+                IncrementalPackagePartProvider.create(
+                        if (separateModules) PackagePartProvider.EMPTY else packagePartProvider,
+                        files, targetIds, incrementalComponents, storageManager
+                ),
+                languageVersionSettings,
+                moduleClassResolver
+        ).apply {
+            initJvmBuiltInsForTopDownAnalysis(module, languageVersionSettings)
+        }
 
+        moduleClassResolver.sourceCodeResolver = container.get<JavaDescriptorResolver>()
         val additionalProviders = ArrayList<PackageFragmentProvider>()
 
         if (incrementalComponents != null) {
@@ -100,10 +169,16 @@ object TopDownAnalyzerFacadeForJVM {
 
         additionalProviders.add(container.get<JavaDescriptorResolver>().packageFragmentProvider)
 
+        // TODO: consider putting extension package fragment providers into the dependency module
         PackageFragmentProviderExtension.getInstances(project).mapNotNullTo(additionalProviders) { extension ->
             extension.getPackageFragmentProvider(project, module, storageManager, trace, null)
         }
 
+        // TODO: remove dependencyModule from friends
+        module.setDependencies(ModuleDependenciesImpl(
+                listOfNotNull(module, dependencyModule, module.builtIns.builtInsModule),
+                if (dependencyModule != null) setOf(dependencyModule) else emptySet()
+        ))
         module.initialize(CompositePackageFragmentProvider(
                 listOf(container.get<KotlinCodeAnalyzer>().packageFragmentProvider) +
                 additionalProviders
@@ -119,14 +194,29 @@ object TopDownAnalyzerFacadeForJVM {
         return AnalysisResult.success(trace.bindingContext, module)
     }
 
-    fun createContextWithSealedModule(project: Project, configuration: CompilerConfiguration): MutableModuleContext {
+    class SourceOrBinaryModuleClassResolver(private val separateModules: Boolean) : ModuleClassResolver {
+        lateinit var compiledCodeResolver: JavaDescriptorResolver
+        lateinit var sourceCodeResolver: JavaDescriptorResolver
+
+        override fun resolveClass(javaClass: JavaClass): ClassDescriptor? {
+            val resolver = if (separateModules && (javaClass as? JavaClassImpl)?.psi is PsiCompiledElement)
+                compiledCodeResolver
+            else
+                sourceCodeResolver
+            return resolver.resolveClass(javaClass)
+        }
+    }
+
+    fun createContextWithSealedModule(project: Project, configuration: CompilerConfiguration): MutableModuleContext =
+            createModuleContext(project, configuration).apply {
+                setDependencies(module, module.builtIns.builtInsModule)
+            }
+
+    private fun createModuleContext(project: Project, configuration: CompilerConfiguration): MutableModuleContext {
         val projectContext = ProjectContext(project)
-        val builtIns = JvmBuiltIns(projectContext.storageManager)
-        val context = ContextForNewModule(
+        return ContextForNewModule(
                 projectContext, Name.special("<${configuration.getNotNull(CommonConfigurationKeys.MODULE_NAME)}>"),
-                JvmPlatform, builtIns
+                JvmPlatform, JvmBuiltIns(projectContext.storageManager)
         )
-        context.setDependencies(context.module, builtIns.builtInsModule)
-        return context
     }
 }

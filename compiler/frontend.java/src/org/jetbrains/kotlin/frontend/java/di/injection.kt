@@ -132,6 +132,7 @@ fun createContainerForTopDownSingleModuleAnalyzerForJvm(
         moduleContext, bindingTrace, declarationProviderFactory, moduleContentScope,
         LookupTracker.DO_NOTHING, packagePartProvider, languageVersionSettings, SingleModuleClassResolver()
 ).apply {
+    initJvmBuiltInsForTopDownAnalysis(moduleContext.module, languageVersionSettings)
     get<SingleModuleClassResolver>().resolver = get<JavaDescriptorResolver>()
 }
 

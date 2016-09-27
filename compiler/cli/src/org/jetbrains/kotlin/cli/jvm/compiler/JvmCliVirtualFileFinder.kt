@@ -17,16 +17,19 @@
 package org.jetbrains.kotlin.cli.jvm.compiler
 
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.search.GlobalSearchScope
 import org.jetbrains.kotlin.load.kotlin.VirtualFileKotlinClassFinder
 import org.jetbrains.kotlin.name.ClassId
 
-class JvmCliVirtualFileFinder(private val index: JvmDependenciesIndex) : VirtualFileKotlinClassFinder() {
-
+class JvmCliVirtualFileFinder(
+        private val index: JvmDependenciesIndex,
+        private val scope: GlobalSearchScope
+) : VirtualFileKotlinClassFinder() {
     override fun findVirtualFileWithHeader(classId: ClassId): VirtualFile? {
         val classFileName = classId.relativeClassName.asString().replace('.', '$')
         return index.findClass(classId, acceptedRootTypes = JavaRoot.OnlyBinary) { dir, rootType ->
             dir.findChild("$classFileName.class")?.let {
-                if (it.isValid) it else null
+                if (it.isValid && it in scope) it else null
             }
         }
     }
