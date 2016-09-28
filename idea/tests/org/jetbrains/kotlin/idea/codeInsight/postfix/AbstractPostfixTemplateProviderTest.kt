@@ -30,5 +30,15 @@ abstract class AbstractPostfixTemplateProviderTest : KotlinLightCodeInsightFixtu
         myFixture.configureByFile(fileName)
         myFixture.type("\t")
         myFixture.checkResultByFile(fileName + ".after")
+
+        val previouslySuggestedExpressions = KtPostfixTemplateProvider.previouslySuggestedExpressions
+        if (previouslySuggestedExpressions.size > 1) {
+            fail("Only one expression should be suggested, but $previouslySuggestedExpressions were found")
+        }
+    }
+
+    override fun tearDown() {
+        super.tearDown()
+        KtPostfixTemplateProvider.previouslySuggestedExpressions = emptyList()
     }
 }
