@@ -52,6 +52,7 @@ import org.jetbrains.kotlin.resolve.calls.model.ExpressionValueArgument;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
 import org.jetbrains.kotlin.resolve.calls.model.VarargValueArgument;
 import org.jetbrains.kotlin.resolve.descriptorUtil.DescriptorUtilsKt;
+import org.jetbrains.kotlin.resolve.jvm.diagnostics.ErrorsJvm;
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin;
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOriginKt;
 import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmClassSignature;
@@ -1306,6 +1307,10 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
             FunctionDescriptor interfaceFun = entry.getKey();
             //skip java 8 default methods
             if (!CodegenUtilKt.isDefinitelyNotDefaultImplsMethod(interfaceFun) && !isJvm8InterfaceMember(interfaceFun, state)) {
+                if (state.isJvm8Target() && !JvmCodegenUtil.isJvm8Interface(interfaceFun.getContainingDeclaration(), state)) {
+                    state.getDiagnostics().report(ErrorsJvm.TARGET6_INTERFACE_INHERITANCE.on(myClass, descriptor, interfaceFun.getContainingDeclaration()));
+                    return;
+                }
                 generateDelegationToDefaultImpl(interfaceFun, entry.getValue());
             }
         }

@@ -1,0 +1,4 @@
+compiler/testData/compileKotlinAgainstCustomBinaries/target6FunInheritance/main.kt:1:1: error: class or interface 'Z2' with compile target jvm 1.8 are inherited from kotlin jvm 1.6 target interface 'Z'. Implicit function body implementation inheritance are restricted for such cases due to compatibility problems in future.Please make explicit override abstract or concrete or update you dependency to target 1.8 version.
+interface Z2 : Z {
+^
+COMPILATION_ERROR

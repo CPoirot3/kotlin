@@ -184,10 +184,19 @@ public class CompileKotlinAgainstCustomBinariesTest extends TestCaseWithTmpdir {
         return library;
     }
 
+    private Pair<String, ExitCode> compileKotlin(
+            @NotNull String fileName,
+            @NotNull File output,
+            @NotNull File... classpath
+    ) {
+        return compileKotlin(fileName, output, false, classpath);
+    }
+
     @NotNull
     private Pair<String, ExitCode> compileKotlin(
             @NotNull String fileName,
             @NotNull File output,
+            boolean jvm8Target,
             @NotNull File... classpath
     ) {
         List<String> args = new ArrayList<String>();
@@ -200,6 +209,10 @@ public class CompileKotlinAgainstCustomBinariesTest extends TestCaseWithTmpdir {
         }
         args.add("-d");
         args.add(output.getPath());
+        if (jvm8Target) {
+            args.add("-jvm-target");
+            args.add("1.8");
+        }
 
         return AbstractCliTest.executeCompilerGrabOutput(new K2JVMCompiler(), args);
     }
@@ -398,6 +411,26 @@ public class CompileKotlinAgainstCustomBinariesTest extends TestCaseWithTmpdir {
         );
 
         Pair<String, ExitCode> outputMain = compileKotlin("main.kt", tmpdir, tmpdir, library);
+
+        KotlinTestUtils.assertEqualsToFile(
+                new File(getTestDataDirectory(), "output.txt"), normalizeOutput(outputMain)
+        );
+    }
+
+    public void testTarget6FunInheritance() throws Exception {
+        target6Inheritance();
+    }
+
+    public void testTarget6PropInheritance() throws Exception {
+        target6Inheritance();
+    }
+
+    private void target6Inheritance() {
+        compileKotlin("target6.kt", tmpdir);
+
+        compileKotlin("main.kt", tmpdir, true, tmpdir);
+
+        Pair<String, ExitCode> outputMain = compileKotlin("main.kt", tmpdir, true, tmpdir);
 
         KotlinTestUtils.assertEqualsToFile(
                 new File(getTestDataDirectory(), "output.txt"), normalizeOutput(outputMain)

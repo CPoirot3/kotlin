@@ -106,6 +106,10 @@ public class DefaultErrorMessagesJvm implements DefaultErrorMessages.Extension {
         MAP.put(ErrorsJvm.STRICTFP_ON_CLASS, "'@Strictfp' annotation on classes is unsupported yet");
 
         MAP.put(ErrorsJvm.SUPER_CALL_WITH_DEFAULT_PARAMETERS, "Super-calls with default arguments are not allowed. Please specify all arguments of ''super.{0}'' explicitly", Renderers.TO_STRING);
+
+        MAP.put(ErrorsJvm.TARGET6_INTERFACE_INHERITANCE, "Class or interface ''{0}'' with compile target jvm 1.8 are inherited from kotlin jvm 1.6 target interface ''{1}''. " +
+                                                         "Implicit function body implementation inheritance are restricted for such cases due to compatibility problems in future." +
+                                                         "Please make explicit override abstract or concrete or update you dependency to target 1.8 version.", Renderers.NAME, Renderers.NAME);
     }
 
     @NotNull
